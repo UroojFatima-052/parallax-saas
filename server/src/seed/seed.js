@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
 import { connectDB } from '../config/db.js'
 import { Tenant } from '../models/Tenant.js'
-import { Role, PERMISSIONS } from '../models/Role.js'
+import { Role, PERMISSIONS } from '../models/role.js'
 import { User } from '../models/User.js'
 import { Booking } from '../models/Booking.js'
 
