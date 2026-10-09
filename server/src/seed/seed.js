@@ -67,9 +67,9 @@ function timeFromToday(day, hour) {
 async function seed() {
   await connectDB()
 
-  await Booking.deleteMany({})
-  await User.deleteMany({})
-  await Role.deleteMany({})
+  await Booking.deleteMany({}).setOptions({ skipTenantCheck: true })
+  await User.deleteMany({}).setOptions({ skipTenantCheck: true })
+  await Role.deleteMany({}).setOptions({ skipTenantCheck: true })
   await Tenant.deleteMany({})
   console.log('Old data cleared\n')
 
