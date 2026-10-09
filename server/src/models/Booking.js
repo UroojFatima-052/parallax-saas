@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantGuard } from '../plugins/tenantGuard.js'
 
 const bookingSchema = new mongoose.Schema(
   {
@@ -24,5 +25,6 @@ bookingSchema.path('endTime').validate(function (value) {
 }, 'End time must be after start time')
 
 bookingSchema.index({ tenantId: 1, startTime: 1 })
+bookingSchema.plugin(tenantGuard)
 
 export const Booking = mongoose.model('Booking', bookingSchema)

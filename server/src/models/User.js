@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantGuard } from '../plugins/tenantGuard.js'
 
 const userSchema = new mongoose.Schema(
   {
@@ -15,5 +16,6 @@ const userSchema = new mongoose.Schema(
 )
 
 userSchema.index({ tenantId: 1, email: 1 }, { unique: true })
+userSchema.plugin(tenantGuard)
 
 export const User = mongoose.model('User', userSchema)

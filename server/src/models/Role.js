@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { tenantGuard } from '../plugins/tenantGuard.js'
 
 export const PERMISSIONS = [
   'bookings:read',
@@ -20,5 +21,6 @@ const roleSchema = new mongoose.Schema(
 )
 
 roleSchema.index({ tenantId: 1, name: 1 }, { unique: true })
+roleSchema.plugin(tenantGuard)
 
 export const Role = mongoose.model('Role', roleSchema)
