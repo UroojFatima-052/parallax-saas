@@ -7,15 +7,41 @@
   --color-rose-dark: #c04459;
   --color-peach: #f7c59f;
   --color-paper: #f5f3ef;
-  --color-line: #d5d6d2;
+  --color-mist: #f4f7f7;
+  --color-line: #dce5e5;
   --color-slate: #4c6168;
 
   --font-display: "Fraunces", Georgia, serif;
   --font-sans: "Manrope", system-ui, sans-serif;
+
+  --animate-tile-pop: tile-pop 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  --animate-fade-up: fade-up 0.5s ease 0.5s both;
+}
+
+@keyframes tile-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(45deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 body {
-  background: var(--color-paper);
+  background: #ffffff;
   color: var(--color-deep);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
