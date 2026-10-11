@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+@theme {
+  --color-teal: #0e4d5c;
+  --color-deep: #0b3540;
+  --color-rose: #d9586b;
+  --color-rose-dark: #c04459;
+  --color-peach: #f7c59f;
+  --color-paper: #f5f3ef;
+  --color-line: #d5d6d2;
+  --color-slate: #4c6168;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Manrope", system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-deep);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
