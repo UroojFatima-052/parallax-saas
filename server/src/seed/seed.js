@@ -2,13 +2,11 @@ import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
 import { connectDB } from '../config/db.js'
 import { Tenant } from '../models/Tenant.js'
-import { Role, PERMISSIONS } from '../models/role.js'
+import { Role, PERMISSIONS, MEMBER_PERMISSIONS } from '../models/Role.js'
 import { User } from '../models/User.js'
 import { Booking } from '../models/Booking.js'
 
 const DEFAULT_PASSWORD = 'Password123!'
-
-const MEMBER_PERMISSIONS = ['bookings:read', 'bookings:create', 'bookings:update']
 
 const organisations = [
   {

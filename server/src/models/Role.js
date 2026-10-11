@@ -11,6 +11,8 @@ export const PERMISSIONS = [
   'billing:manage',
 ]
 
+export const MEMBER_PERMISSIONS = ['bookings:read', 'bookings:create', 'bookings:update']
+
 const roleSchema = new mongoose.Schema(
   {
     tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true },
