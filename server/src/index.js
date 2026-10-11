@@ -4,6 +4,7 @@ import { ZodError } from 'zod'
 import { env } from './config/env.js'
 import { connectDB } from './config/db.js'
 import authRoutes from './routes/authRoutes.js'
+import bookingRoutes from './routes/bookingRoutes.js'
 
 const app = express()
 
@@ -15,6 +16,7 @@ app.get('/api/health', (req, res) => {
 })
 
 app.use('/api/auth', authRoutes)
+app.use('/api/bookings', bookingRoutes)
 
 app.use((err, req, res, next) => {
   if (err instanceof ZodError) {
@@ -22,6 +24,10 @@ app.use((err, req, res, next) => {
       message: 'Validation failed',
       errors: err.issues.map((issue) => ({ field: issue.path.join('.'), message: issue.message })),
     })
+  }
+
+  if (err.name === 'CastError') {
+    return res.status(400).json({ message: 'Invalid ID' })
   }
 
   if (err.code === 11000) {
