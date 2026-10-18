@@ -14,44 +14,105 @@ That's exactly how this app works:
 - All the tiles together make up the platform
 - No tile can see into another, which is the core idea of multi-tenancy
 
-The visual design follows the same idea. The tile pattern on the auth screens is inspired by **ajrak**, the hand block-printed textile from Sindh, where a single carved block is stamped again and again to build the full pattern. On the Create organisation screen, one tile stays lit as "your tile" while you set up your business.
+The visual design follows the same idea. The tile pattern on the auth screens and the strip along the app's edges are inspired by **ajrak**, the hand block-printed textile from Sindh, where a single carved block is stamped again and again to build the full pattern.
 
 ## Tech stack
 
 - **Frontend:** React (Vite), React Router, Tailwind CSS v4, Zod
 - **Backend:** Node.js, Express 5, Mongoose, Zod, JSON Web Tokens, bcryptjs
 - **Database:** MongoDB 7, running in Docker
-- **Tooling:** Docker Compose, nodemon
+- **Tooling:** Docker Compose, nodemon, Postman
 
-## Week 1: what I built
+## Weekly progress
 
-- MERN project with separate `client` and `server` apps in one repo
-- MongoDB running in Docker Compose with persistent storage
-- Environment variable validation with Zod on server startup
-- Multi-tenant schema: Tenants, Roles, Users and Bookings
-- Seed script with three realistic organisations, including cross-tenant test cases
-- Tenant isolation enforced at the database layer with a Mongoose guard plugin
-- Role-based access control with permission lists per role
-- Auth API: organisation onboarding, member registration and login with JWT
-- Responsive auth UI: Sign in, Create organisation, Join organisation and Reset password, all with client-side validation
-- A bookings dashboard that shows only the signed-in organisation's data
-- An isolation verification script that anyone can run
+- **Week 1:** Project architecture, multi-tenant schema, tenant isolation, RBAC, auth API and auth UI ✅
+- **Week 2:** Idempotent booking APIs, strict validation, standard errors, Postman collection, booking calendar UI with create, edit and delete, toasts and retry logic ✅
 
-## How I approached it
+## Week 2: what I built
 
-**Isolation in code, not by trust.** MongoDB has no row-level security like PostgreSQL, so isolation has to live in the application. Instead of relying on every developer remembering to filter by tenant, I wrote a Mongoose plugin (`tenantGuard`) that runs before every query on tenant-owned models. If a query has no `tenantId`, it throws an error and never reaches the database. A forgotten filter becomes a visible error, not a silent data leak.
+**Backend**
 
-**The tenant comes from the token, never from the request.** When a user logs in, their JWT carries their `tenantId`. The auth middleware verifies the token, loads the user from the database and attaches `req.tenantId`. Routes use that value, so a user can't pick a different tenant by changing the URL or request body.
+- Full booking API: list (with date range and status filters), view, create, update and delete
+- Strict Zod validation that rejects unknown fields, so a request can never set its own `tenantId` or `createdBy`
+- One standard error format for every error the API can return
+- Idempotency keys on booking creation, so a retried request can never create a second booking
+- A Postman collection documenting every endpoint, including idempotent retries and error cases
+
+**Frontend**
+
+- Bookings page with a **week calendar** and a **list view**
+- Click an empty time slot to create a booking at that time
+- Booking details with edit, delete (with confirmation) and one-click confirm for pending bookings
+- One shared form for create and edit, with client-side Zod validation that mirrors the server rules
+- Toast notifications for success and failure, with a **Try again** action when a request fails
+- Automatic retry with exponential backoff for temporary failures
+- Mobile layout: the calendar switches to one day at a time with a day picker, and popups become bottom sheets
+- Edit and delete buttons follow the signed-in user's role permissions
+
+## Week 2: how I approached it
+
+**One error shape everywhere.** Every error from the API looks the same:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Some fields are invalid",
+    "details": [{ "field": "endTime", "message": "End time must be after start time" }]
+  }
+}
+```
+
+The frontend checks `code`, which never changes, instead of matching message text. `details` only appears on validation errors, one item per field, so the form can show each message under the right input. Controllers and middleware just `throw new AppError(status, code, message)`, and one error handler turns every error into this shape.
+
+**Strict validation as a security layer.** The booking schemas use Zod's `.strict()`, so any field that isn't expected is rejected with a `400`. Sending `tenantId` in the body to try to write into another organisation fails validation before it reaches the database. The tenant always comes from the signed-in user's token.
+
+**Idempotency for safe retries.** The risky case is a create request that succeeds on the server but whose response is lost on the way back. The client retries and, without protection, a second booking is created.
+
+The client sends an `Idempotency-Key` header, a random ID made once per user action and reused for every retry of that action. The server stores each key with a fingerprint of the request body and the response it sent:
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as Express API
+    participant DB as MongoDB
+    C->>API: POST /api/bookings (Idempotency-Key: K)
+    API->>DB: save key K as "processing"
+    API->>DB: create booking
+    API->>DB: save the response under K
+    API--xC: response lost (network drop)
+    C->>API: retry with the same key K
+    API->>DB: saving K fails, it already exists
+    API->>DB: read the saved response for K
+    API-->>C: 201 with the same booking + Idempotent-Replayed: true
+```
+
+- Same key, same body → the saved response is sent again, nothing new is created
+- Same key, different body → `422 IDEMPOTENCY_KEY_REUSED`
+- Same key while the first request is still running → `409 IDEMPOTENCY_IN_PROGRESS`
+- Server error (`5xx`) → the key is released so the client can retry properly
+
+The key is saved with a unique index on tenant, user and key, so two retries arriving at the exact same moment can't both get through. Keys expire after 24 hours through a MongoDB TTL index.
+
+**Retry only what's safe to retry.** The frontend retries automatically (twice, waiting 0.5s then 1s) only when the problem is temporary: no connection, or `502`, `503`, `504`. It never retries `4xx` errors, because the same wrong request gets the same answer. `GET` and `DELETE` are always safe to retry. `POST` and `PATCH` are retried only when they carry an idempotency key. If a retried `DELETE` returns `404`, the first attempt already worked, so it counts as success. When all retries fail, a toast offers **Try again**, which reuses the same key.
+
+**Times in UTC, shown in local time.** The API stores and returns ISO dates in UTC. The browser converts them for display and converts form input back to UTC before sending, so bookings show correctly for anyone in any timezone.
+
+## Week 1: how I approached it
+
+**Isolation in code, not by trust.** MongoDB has no row-level security like PostgreSQL, so isolation has to live in the application. A Mongoose plugin (`tenantGuard`) runs before every query on tenant-owned models. If a query has no `tenantId`, it throws an error and never reaches the database. A forgotten filter becomes a visible error, not a silent data leak.
+
+**The tenant comes from the token, never from the request.** When a user logs in, their JWT carries their `tenantId`. The auth middleware verifies the token, loads the user from the database and attaches `req.tenantId`. Routes use that value, so a user can't pick a different tenant by changing the URL or body.
 
 **Cross-tenant requests look like missing data.** If City Clinic sends the ID of a Glow Salon booking, the query includes both the booking ID and the clinic's `tenantId`, so nothing matches and the API returns `404`. It never confirms the booking exists.
 
 **Email is unique per tenant, not globally.** The same person can work at two businesses with the same email and have two separate accounts. Login asks for the organisation URL first, like choosing a Slack workspace.
 
-**Roles hold permissions.** Instead of checking "is this user an admin?" all over the code, each role has a list like `bookings:read` or `bookings:delete`, and routes check for the specific permission they need. Adding a new role later means adding a list, not changing code.
+**Roles hold permissions.** Each role has a list like `bookings:read` or `bookings:delete`, and routes check for the specific permission they need. Adding a role later means adding a list, not changing code.
 
-**Safe onboarding without transactions.** Creating an organisation makes a tenant, two roles and the first admin. MongoDB transactions need a replica set, so instead the onboarding handler deletes the tenant and roles if any later step fails, so no half-created organisations are left behind.
+**Safe onboarding without transactions.** Creating an organisation makes a tenant, two roles and the first admin. MongoDB transactions need a replica set, so the onboarding handler deletes the tenant and roles if a later step fails.
 
-**Same login error for every failure.** Wrong organisation, wrong email or wrong password all return "Invalid organisation, email or password", so nobody can use the login form to find out which accounts exist. The password reset screen follows the same rule.
+**Same login error for every failure.** Wrong organisation, email or password all return the same message, so the login form can't be used to find out which accounts exist.
 
 ## Data model
 
@@ -62,8 +123,10 @@ erDiagram
     TENANT ||--o{ ROLE : defines
     TENANT ||--o{ USER : has
     TENANT ||--o{ BOOKING : owns
+    TENANT ||--o{ IDEMPOTENCY_KEY : scopes
     ROLE ||--o{ USER : "assigned to"
     USER ||--o{ BOOKING : creates
+    USER ||--o{ IDEMPOTENCY_KEY : sends
 
     TENANT {
         ObjectId _id PK
@@ -99,18 +162,19 @@ erDiagram
         string notes
         ObjectId createdBy FK
     }
+    IDEMPOTENCY_KEY {
+        ObjectId _id PK
+        ObjectId tenantId FK
+        ObjectId userId FK
+        string key "unique per tenant and user"
+        string requestHash "fingerprint of the request"
+        string status "processing or completed"
+        mixed responseBody "replayed on retries"
+        date createdAt "expires after 24 hours"
+    }
 ```
 
-Indexes:
-
-- `Tenant.slug` is unique across the platform
-- `Role (tenantId, name)` is unique, so every tenant has its own "admin" and "member"
-- `User (tenantId, email)` is unique, so the same email can exist in different tenants
-- `Booking (tenantId, startTime)` keeps "this tenant's bookings by date" fast
-
 ## Tenant isolation boundaries
-
-Every protected request passes through these layers before touching data:
 
 ```mermaid
 flowchart LR
@@ -124,10 +188,6 @@ flowchart LR
     F -->|no tenantId in filter| X3[Error, query blocked]
     F -->|tenantId present| G[(MongoDB)]
 ```
-
-- **`requireAuth`** checks who is asking and which tenant they belong to
-- **`requirePermission`** checks what their role allows
-- **`tenantGuard`** is the last line of defence, so even a buggy route can't read another tenant's data
 
 ## Getting started
 
@@ -183,6 +243,10 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+### 4. Try the API in Postman
+
+Import `docs/tessera.postman_collection.json` into Postman. Run **Login (admin)** first, it saves the token for every other request. **Create booking** generates a fresh idempotency key and saves the new booking's ID, so **Retry create**, **Get**, **Update** and **Delete** work without copying anything.
+
 ## Test accounts
 
 All seeded users have the password `Password123!`.
@@ -196,6 +260,8 @@ The seed includes two cross-tenant cases on purpose:
 - **Shared staff:** Bilal works at City Clinic and FitZone Gym with the same email. He has two separate accounts, and the organisation he signs into decides what he sees
 - **Shared customer:** Fatima Noor has a blood test at City Clinic and a facial at Glow Salon. Each business only sees its own booking with her
 
+Seeded bookings are placed in the days after you run the seed, so they always show in the current or next week.
+
 ## Verifying isolation
 
 With the database seeded, run from `server`:
@@ -204,14 +270,7 @@ With the database seeded, run from `server`:
 npm run verify
 ```
 
-It checks that:
-
-- A scoped query returns only that tenant's bookings
-- Queries without a `tenantId` (`find`, `findById`, `deleteMany`) are blocked by the guard
-- One tenant can't read another tenant's booking even with its exact ID
-- The shared customer and shared staff cases stay separate
-
-Expected output ends with `All isolation checks passed`.
+It checks that scoped queries return only one tenant's data, that queries without a `tenantId` are blocked, that one tenant can't read another tenant's booking even with its exact ID, and that the shared customer and shared staff cases stay separate.
 
 ## API endpoints
 
@@ -223,12 +282,37 @@ Expected output ends with `All isolation checks passed`.
 
 **Bookings** (requires `Authorization: Bearer <token>`)
 
-- `GET /api/bookings` lists the signed-in tenant's bookings. Needs `bookings:read`
-- `DELETE /api/bookings/:id` deletes a booking in the signed-in tenant. Needs `bookings:delete`, so members get `403`
+- `GET /api/bookings?from=&to=&status=` lists the tenant's bookings, optionally within a date range or by status. Needs `bookings:read`
+- `POST /api/bookings` creates a booking. Needs `bookings:create` and an `Idempotency-Key` header
+- `GET /api/bookings/:id` returns one booking with the creator's name. Needs `bookings:read`
+- `PATCH /api/bookings/:id` updates any booking fields. Needs `bookings:update`. `Idempotency-Key` is optional
+- `DELETE /api/bookings/:id` deletes a booking. Needs `bookings:delete`, so members get `403`
 
 **Other**
 
 - `GET /api/health` returns `{ "status": "ok" }`
+
+### Error codes
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | A field is missing, invalid, or not allowed |
+| 400 | `INVALID_JSON` | The request body isn't valid JSON |
+| 400 | `INVALID_ID` | An ID in the URL isn't in a valid format |
+| 400 | `IDEMPOTENCY_KEY_REQUIRED` | Creating a booking without an `Idempotency-Key` |
+| 400 | `INVALID_IDEMPOTENCY_KEY` | The key is shorter than 8 or longer than 100 characters |
+| 401 | `UNAUTHORIZED` | No token, or the account no longer exists |
+| 401 | `SESSION_EXPIRED` | The token is invalid or expired |
+| 401 | `INVALID_CREDENTIALS` | Wrong organisation, email or password |
+| 403 | `FORBIDDEN` | The user's role doesn't have the needed permission |
+| 404 | `BOOKING_NOT_FOUND` | No such booking in the signed-in organisation |
+| 404 | `ORG_NOT_FOUND` | Registering into an organisation that doesn't exist |
+| 404 | `ROUTE_NOT_FOUND` | No route matches the method and URL |
+| 409 | `SLUG_TAKEN` | The organisation URL is already used |
+| 409 | `EMAIL_TAKEN` | The email already has an account in that organisation |
+| 409 | `IDEMPOTENCY_IN_PROGRESS` | A request with this key is still being processed |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | The key was already used with a different request body |
+| 500 | `INTERNAL_ERROR` | Something unexpected failed on the server |
 
 ## Project structure
 
@@ -236,30 +320,36 @@ Expected output ends with `All isolation checks passed`.
 parallax-saas/
 ├── client/                    React frontend
 │   └── src/
-│       ├── api/               apiRequest helper
-│       ├── components/        AuthLayout, AjrakPattern, FormField, SubmitButton, FormAlert
-│       ├── pages/             Login, Onboard, Register, ResetPassword, Dashboard
-│       └── utils/             validation, slugify, session
+│       ├── api/               apiRequest with retry logic and idempotency keys
+│       ├── components/        layout, calendar, list, booking form and details, modal, toasts, ajrak pattern
+│       ├── context/           toast context
+│       ├── hooks/             useToast, useMediaQuery
+│       ├── pages/             auth pages and the bookings page
+│       └── utils/             dates, validation, slugify, session
 ├── server/                    Express backend
 │   └── src/
 │       ├── config/            env validation, database connection
 │       ├── controllers/       auth and booking logic
-│       ├── middleware/        requireAuth, requirePermission
-│       ├── models/            Tenant, Role, User, Booking
+│       ├── middleware/        auth, idempotency, error handler
+│       ├── models/            Tenant, Role, User, Booking, IdempotencyKey
 │       ├── plugins/           tenantGuard
 │       ├── routes/            auth and booking routes
 │       ├── seed/              seed and isolation verification scripts
-│       └── utils/             JWT helpers
+│       ├── utils/             JWT helpers, AppError
+│       └── validators/        booking Zod schemas
+├── docs/                      Postman collection
 └── docker-compose.yml         MongoDB
 ```
 
 ## Known limitations
 
-These are deliberate Week 1 trade-offs, planned for later weeks:
+Deliberate trade-offs, planned for later weeks:
 
-- **Open registration:** anyone who knows an organisation's URL can join it as a member. A real product would use invite links from an admin
-- **Password reset is UI only:** the request screen works, but no email is sent yet
+- **No overlap check between bookings:** two bookings can share a time slot, since a clinic or salon often has several staff working at once. Per-staff availability needs a resource or staff model first
+- **Bookings stay within one day:** the form sets one date with a start and end time, so a booking can't run past midnight
+- **Old tokens stay valid until they expire:** signing in again issues a new token but doesn't cancel the old one, and there's no "log out everywhere" yet. A `tokenVersion` on the user would allow revoking tokens
 - **Token in localStorage:** simple to work with, but readable by JavaScript if the site ever had an XSS bug. An `httpOnly` cookie would be safer
+- **Open registration:** anyone who knows an organisation's URL can join it as a member. A real product would use invite links
+- **Password reset is UI only:** the request screen works, but no email is sent yet
 - **No transactions:** onboarding cleans up manually on failure instead of using MongoDB transactions, which need a replica set
 - **Subdomains are a preview only:** the `slug.tessera.app` address is shown in the UI, but routing by subdomain comes later
-
