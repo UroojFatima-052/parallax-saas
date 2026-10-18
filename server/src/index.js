@@ -4,7 +4,7 @@ import { env } from './config/env.js'
 import { connectDB } from './config/db.js'
 import authRoutes from './routes/authRoutes.js'
 import bookingRoutes from './routes/bookingRoutes.js'
-import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
+import { errorHandler, notFoundHandler } from './middleware/ErrorHandler.js'
 
 const app = express()
 
