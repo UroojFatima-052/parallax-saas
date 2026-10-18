@@ -4,6 +4,7 @@ import { Tenant } from '../models/Tenant.js'
 import { Role, PERMISSIONS, MEMBER_PERMISSIONS } from '../models/Role.js'
 import { User } from '../models/User.js'
 import { signToken } from '../utils/token.js'
+import { AppError } from '../utils/AppError.js'
 
 const onboardSchema = z.object({
   orgName: z.string().trim().min(2, 'Organisation name is too short'),
@@ -48,7 +49,7 @@ export async function onboardOrganisation(req, res) {
 
   const slugTaken = await Tenant.exists({ slug: data.slug })
   if (slugTaken) {
-    return res.status(409).json({ message: 'This organisation URL is already taken' })
+    throw new AppError(409, 'SLUG_TAKEN', 'This organisation URL is already taken')
   }
 
   const tenant = await Tenant.create({ name: data.orgName, slug: data.slug })
@@ -81,7 +82,7 @@ export async function register(req, res) {
 
   const tenant = await Tenant.findOne({ slug: data.orgSlug, isActive: true })
   if (!tenant) {
-    return res.status(404).json({ message: 'Organisation not found' })
+    throw new AppError(404, 'ORG_NOT_FOUND', 'Organisation not found')
   }
 
   const memberRole = await Role.findOne({ tenantId: tenant._id, name: 'member' })
@@ -100,20 +101,20 @@ export async function register(req, res) {
 
 export async function login(req, res) {
   const data = loginSchema.parse(req.body)
-  const invalid = () => res.status(401).json({ message: 'Invalid organisation, email or password' })
+  const invalid = new AppError(401, 'INVALID_CREDENTIALS', 'Invalid organisation, email or password')
 
   const tenant = await Tenant.findOne({ slug: data.orgSlug, isActive: true })
-  if (!tenant) return invalid()
+  if (!tenant) throw invalid
 
   const user = await User.findOne({
     tenantId: tenant._id,
     email: data.email,
     isActive: true,
   }).select('+passwordHash')
-  if (!user) return invalid()
+  if (!user) throw invalid
 
   const passwordMatches = await bcrypt.compare(data.password, user.passwordHash)
-  if (!passwordMatches) return invalid()
+  if (!passwordMatches) throw invalid
 
   const role = await Role.findOne({ _id: user.role, tenantId: tenant._id })
 

@@ -1,25 +1,26 @@
 import { verifyToken } from '../utils/token.js'
 import { User } from '../models/User.js'
 import { Role } from '../models/Role.js'
+import { AppError } from '../utils/AppError.js'
 
 export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || ''
   const [scheme, token] = header.split(' ')
 
   if (scheme !== 'Bearer' || !token) {
-    return res.status(401).json({ message: 'Not logged in' })
+    throw new AppError(401, 'UNAUTHORIZED', 'You need to sign in first')
   }
 
   let payload
   try {
     payload = verifyToken(token)
   } catch {
-    return res.status(401).json({ message: 'Session expired or invalid, please log in again' })
+    throw new AppError(401, 'SESSION_EXPIRED', 'Your session expired. Sign in again')
   }
 
   const user = await User.findOne({ _id: payload.userId, tenantId: payload.tenantId, isActive: true })
   if (!user) {
-    return res.status(401).json({ message: 'Account not found' })
+    throw new AppError(401, 'UNAUTHORIZED', 'Account not found')
   }
 
   const role = await Role.findOne({ _id: user.role, tenantId: user.tenantId })
@@ -33,7 +34,7 @@ export async function requireAuth(req, res, next) {
 export function requirePermission(permission) {
   return (req, res, next) => {
     if (!req.permissions.includes(permission)) {
-      return res.status(403).json({ message: 'You do not have permission to do this' })
+      throw new AppError(403, 'FORBIDDEN', 'Your role does not allow this action')
     }
     next()
   }
