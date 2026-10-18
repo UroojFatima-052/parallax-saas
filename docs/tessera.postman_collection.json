@@ -1,0 +1,301 @@
+{
+  "info": {
+    "name": "Tessera API",
+    "description": "Multi-tenant booking API for Tessera.\n\nAll errors use one shape:\n\n{ \"error\": { \"code\": \"VALIDATION_ERROR\", \"message\": \"Some fields are invalid\", \"details\": [{ \"field\": \"endTime\", \"message\": \"End time must be after start time\" }] } }\n\n`details` only appears on validation errors.\n\nRun **Login (admin)** first. It saves the token automatically. Seeded users all use the password Password123!",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "token", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "idempotencyKey", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "url": "{{baseUrl}}/api/health",
+        "description": "Returns { status: 'ok' } when the server is running."
+      }
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('token', pm.response.json().token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgSlug\": \"city-clinic\",\n  \"email\": \"ayesha@cityclinic.test\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "description": "Signs in with organisation URL, email and password. Saves the token to the collection. Wrong details return 401 INVALID_CREDENTIALS."
+          }
+        },
+        {
+          "name": "Login (member)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('token', pm.response.json().token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgSlug\": \"city-clinic\",\n  \"email\": \"bilal.ahmed@mail.test\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "description": "Signs in as a member. Members can read, create and update bookings but deleting returns 403 FORBIDDEN."
+          }
+        },
+        {
+          "name": "Onboard organisation",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/onboard",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgName\": \"Smile Dental\",\n  \"slug\": \"smile-dental\",\n  \"name\": \"Urooj Fatima\",\n  \"email\": \"urooj@smiledental.test\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "description": "Creates an organisation, its admin and member roles, and the first admin user. A taken URL returns 409 SLUG_TAKEN."
+          }
+        },
+        {
+          "name": "Register member",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orgSlug\": \"city-clinic\",\n  \"name\": \"Ali Hassan\",\n  \"email\": \"ali@cityclinic.test\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "description": "Joins an existing organisation as a member. Unknown organisation returns 404 ORG_NOT_FOUND, an email already in that organisation returns 409 EMAIL_TAKEN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "List bookings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings",
+            "description": "Lists the signed-in organisation's bookings, sorted by start time. Needs bookings:read."
+          }
+        },
+        {
+          "name": "List bookings in a date range",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings?from=2026-10-19T00:00:00.000Z&to=2026-10-26T00:00:00.000Z&status=confirmed",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bookings"],
+              "query": [
+                { "key": "from", "value": "2026-10-19T00:00:00.000Z" },
+                { "key": "to", "value": "2026-10-26T00:00:00.000Z" },
+                { "key": "status", "value": "confirmed" }
+              ]
+            },
+            "description": "Used by the week calendar. from is inclusive, to is exclusive. status is optional."
+          }
+        },
+        {
+          "name": "Create booking",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('bookingId', pm.response.json().booking._id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/bookings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Root canal\",\n  \"customerName\": \"Usman Tariq\",\n  \"customerEmail\": \"usman@mail.test\",\n  \"startTime\": \"2026-10-21T11:00:00.000Z\",\n  \"endTime\": \"2026-10-21T12:00:00.000Z\",\n  \"status\": \"pending\",\n  \"notes\": \"Bring previous X-rays\"\n}"
+            },
+            "description": "Creates a booking. Requires an Idempotency-Key header (a new one is generated before each run). Missing key returns 400 IDEMPOTENCY_KEY_REQUIRED. Unknown fields such as tenantId are rejected."
+          }
+        },
+        {
+          "name": "Retry create (same key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/bookings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Root canal\",\n  \"customerName\": \"Usman Tariq\",\n  \"customerEmail\": \"usman@mail.test\",\n  \"startTime\": \"2026-10-21T11:00:00.000Z\",\n  \"endTime\": \"2026-10-21T12:00:00.000Z\",\n  \"status\": \"pending\",\n  \"notes\": \"Bring previous X-rays\"\n}"
+            },
+            "description": "Run right after Create booking. Reuses the same key and body, so no second booking is created. Returns the original response with the header Idempotent-Replayed: true."
+          }
+        },
+        {
+          "name": "Reuse key with different body",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/bookings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Something else\",\n  \"customerName\": \"Usman Tariq\",\n  \"startTime\": \"2026-10-21T11:00:00.000Z\",\n  \"endTime\": \"2026-10-21T12:00:00.000Z\"\n}"
+            },
+            "description": "Same key as Create booking but a different body. Returns 422 IDEMPOTENCY_KEY_REUSED."
+          }
+        },
+        {
+          "name": "Get booking",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
+            "description": "Returns one booking with createdByName. A booking from another organisation returns 404 BOOKING_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Update booking",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\"\n}"
+            },
+            "description": "Updates any of the booking fields. Idempotency-Key is optional here. End time is checked against the existing start time when only one is changed."
+          }
+        },
+        {
+          "name": "Delete booking",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
+            "description": "Deletes a booking. Returns 204. Needs bookings:delete, so members get 403 FORBIDDEN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error examples",
+      "item": [
+        {
+          "name": "Validation error (end before start)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "url": "{{baseUrl}}/api/bookings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Checkup\",\n  \"customerName\": \"Sara Ali\",\n  \"startTime\": \"2026-10-20T10:00:00.000Z\",\n  \"endTime\": \"2026-10-20T09:30:00.000Z\"\n}"
+            },
+            "description": "Returns 400 VALIDATION_ERROR with details on endTime."
+          }
+        },
+        {
+          "name": "Unknown field rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "url": "{{baseUrl}}/api/bookings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Checkup\",\n  \"customerName\": \"Sara Ali\",\n  \"startTime\": \"2026-10-20T10:00:00.000Z\",\n  \"endTime\": \"2026-10-20T10:30:00.000Z\",\n  \"tenantId\": \"someone-elses-tenant\"\n}"
+            },
+            "description": "Strict validation rejects tenantId in the body. Returns 400 VALIDATION_ERROR."
+          }
+        },
+        {
+          "name": "No token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings",
+            "description": "Returns 401 UNAUTHORIZED."
+          }
+        },
+        {
+          "name": "Unknown route",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/nothing-here",
+            "description": "Returns 404 ROUTE_NOT_FOUND."
+          }
+        }
+      ]
+    }
+  ]
+}
