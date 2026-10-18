@@ -1,24 +1,14 @@
 import { useEffect, useState } from 'react'
-import StatusPill from './StatusPill.jsx'
-import { apiRequest } from '../api/client.js'
+import BookingTicket from './BookingTicket.jsx'
+import { apiRequest, newIdempotencyKey } from '../api/client.js'
 import { useToast } from '../hooks/useToast.js'
-import { formatLongDate, formatTime, formatDuration } from '../utils/dates.js'
 
-function Row({ label, children }) {
-  return (
-    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 px-4 py-3 text-sm">
-      <dt className="text-slate">{label}</dt>
-      <dd className="text-deep">{children}</dd>
-    </div>
-  )
-}
-
-function BookingDetails({ bookingId, token, canEdit, canDelete, onEdit, onDeleted }) {
+function BookingDetails({ bookingId, token, canEdit, canDelete, onEdit, onSaved, onDeleted }) {
   const toast = useToast()
   const [state, setState] = useState({ status: 'loading', booking: null, error: null })
   const [attempt, setAttempt] = useState(0)
-  const [confirming, setConfirming] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [askingDelete, setAskingDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -41,31 +31,56 @@ function BookingDetails({ bookingId, token, canEdit, canDelete, onEdit, onDelete
     setAttempt((current) => current + 1)
   }
 
+  function showError(error, retry) {
+    const temporary = error.status === 0 || error.status >= 500
+    toast.error(error.message, temporary ? { action: { label: 'Try again', onClick: retry } } : undefined)
+  }
+
+  async function handleConfirm(idempotencyKey = newIdempotencyKey()) {
+    setBusy(true)
+    try {
+      const data = await apiRequest(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        body: { status: 'confirmed' },
+        token,
+        idempotencyKey,
+      })
+      setState((current) => ({
+        ...current,
+        booking: { ...data.booking, createdByName: current.booking.createdByName },
+      }))
+      onSaved(data.booking, 'confirm')
+    } catch (error) {
+      showError(error, () => handleConfirm(idempotencyKey))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleDelete() {
-    setDeleting(true)
+    setBusy(true)
     try {
       await apiRequest(`/api/bookings/${bookingId}`, { method: 'DELETE', token })
       onDeleted()
     } catch (error) {
-      setDeleting(false)
-      const temporary = error.status === 0 || error.status >= 500
-      toast.error(error.message, temporary ? { action: { label: 'Try again', onClick: handleDelete } } : undefined)
+      setBusy(false)
+      showError(error, handleDelete)
     }
   }
 
   if (state.status === 'loading') {
     return (
       <div className="animate-pulse space-y-4" aria-label="Loading booking">
-        <div className="h-6 w-24 rounded-full bg-mist" />
-        <div className="h-8 w-3/4 rounded-lg bg-mist" />
-        <div className="h-40 rounded-xl bg-mist" />
+        <div className="h-56 rounded-2xl bg-paper" />
+        <div className="h-24 rounded-2xl bg-mist" />
+        <div className="h-11 rounded-xl bg-mist" />
       </div>
     )
   }
 
   if (state.status === 'error') {
     return (
-      <div className="rounded-xl border border-rose/30 bg-rose/5 p-5 text-center">
+      <div className="rounded-2xl border border-rose/30 bg-rose/5 p-6 text-center">
         <p className="text-sm font-medium text-rose-dark">{state.error.message}</p>
         <button type="button" onClick={retryLoad} className="mt-3 text-sm font-semibold text-teal hover:underline">
           Try again
@@ -75,87 +90,88 @@ function BookingDetails({ bookingId, token, canEdit, canDelete, onEdit, onDelete
   }
 
   const { booking } = state
-  const start = new Date(booking.startTime)
-  const end = new Date(booking.endTime)
+  const canConfirm = canEdit && booking.status === 'pending'
 
   return (
-    <div className="space-y-6">
-      <div>
-        <StatusPill status={booking.status} />
-        <h3 className="mt-3 font-display text-2xl font-semibold leading-snug text-deep">{booking.title}</h3>
+    <div className="space-y-4">
+      <div className="rounded-2xl bg-paper p-4 sm:p-5">
+        <BookingTicket booking={booking} />
       </div>
 
-      <dl className="divide-y divide-line rounded-xl border border-line">
-        <Row label="When">
-          {formatLongDate(start)}
-          <span className="block text-slate">
-            {formatTime(start)} to {formatTime(end)} ({formatDuration(start, end)})
-          </span>
-        </Row>
-        <Row label="Customer">
-          {booking.customerName}
-          {booking.customerEmail && (
-            <a href={`mailto:${booking.customerEmail}`} className="block truncate text-teal hover:underline">
-              {booking.customerEmail}
-            </a>
-          )}
-        </Row>
-        <Row label="Notes">
-          {booking.notes ? (
-            <span className="whitespace-pre-wrap">{booking.notes}</span>
-          ) : (
-            <span className="text-slate">No notes</span>
-          )}
-        </Row>
-        <Row label="Created by">{booking.createdByName}</Row>
-      </dl>
+      <div className="space-y-4 rounded-2xl border border-line px-5 py-4">
+        <div>
+          <p className="text-[10px] font-bold tracking-wide text-slate uppercase">Notes</p>
+          <p className="mt-1 text-sm whitespace-pre-wrap text-deep">
+            {booking.notes || <span className="text-slate">No notes</span>}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold tracking-wide text-slate uppercase">Added by</p>
+          <p className="mt-1 text-sm text-deep">{booking.createdByName}</p>
+        </div>
+      </div>
 
-      {confirming ? (
-        <div className="rounded-xl border border-rose/30 bg-rose/5 p-4">
+      {askingDelete ? (
+        <div className="rounded-2xl border border-rose/30 bg-rose/5 p-4">
           <p className="text-sm font-semibold text-deep">Delete this booking?</p>
           <p className="mt-1 text-sm text-slate">This can't be undone.</p>
           <div className="mt-4 flex gap-2">
             <button
               type="button"
-              onClick={() => setConfirming(false)}
-              className="h-10 flex-1 rounded-lg border border-line bg-white text-sm font-semibold text-deep transition hover:bg-mist"
+              onClick={() => setAskingDelete(false)}
+              className="h-11 flex-1 rounded-xl border border-line bg-white text-sm font-semibold text-deep transition hover:bg-mist"
             >
               Keep it
             </button>
             <button
               type="button"
               onClick={handleDelete}
-              disabled={deleting}
-              className="h-10 flex-1 rounded-lg bg-rose text-sm font-semibold text-white transition hover:bg-rose-dark disabled:opacity-70"
+              disabled={busy}
+              className="h-11 flex-1 rounded-xl bg-rose text-sm font-semibold text-white transition hover:bg-rose-dark disabled:opacity-70"
             >
-              {deleting ? 'Deleting…' : 'Delete booking'}
+              {busy ? 'Deleting…' : 'Delete booking'}
             </button>
           </div>
         </div>
       ) : (
-        <div className="flex gap-2">
-          {canEdit && (
+        <div className="space-y-2">
+          {canConfirm && (
             <button
               type="button"
-              onClick={() => onEdit(booking)}
-              className="h-11 flex-1 rounded-lg bg-teal text-sm font-semibold text-paper transition hover:bg-deep"
+              onClick={() => handleConfirm()}
+              disabled={busy}
+              className="h-12 w-full rounded-xl bg-teal text-sm font-bold text-paper transition hover:bg-deep disabled:opacity-70"
             >
-              Edit booking
+              {busy ? 'Confirming…' : 'Confirm booking'}
             </button>
           )}
-          {canDelete && (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className="h-11 rounded-lg border border-rose/40 px-5 text-sm font-semibold text-rose-dark transition hover:bg-rose/5"
-            >
-              Delete
-            </button>
-          )}
+          <div className="flex gap-2">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(booking)}
+                className={`h-11 flex-1 rounded-xl text-sm font-semibold transition ${
+                  canConfirm
+                    ? 'border border-line bg-white text-deep hover:bg-mist'
+                    : 'bg-teal text-paper hover:bg-deep'
+                }`}
+              >
+                Edit booking
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => setAskingDelete(true)}
+                className="h-11 rounded-xl border border-rose/40 bg-white px-5 text-sm font-semibold text-rose-dark transition hover:bg-rose/5"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+          {!canDelete && <p className="pt-1 text-center text-xs text-slate">Only admins can delete bookings.</p>}
         </div>
       )}
-
-      {!canDelete && <p className="text-xs text-slate">Only admins can delete bookings.</p>}
     </div>
   )
 }

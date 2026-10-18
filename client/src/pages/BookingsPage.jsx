@@ -106,7 +106,7 @@ function BookingsPage() {
   }
 
   function handleSaved(booking, mode) {
-    toast.success(mode === 'create' ? 'Booking created' : 'Changes saved')
+    toast.success({ create: 'Booking created', edit: 'Changes saved', confirm: 'Booking confirmed' }[mode])
     const bookingStart = new Date(booking.startTime)
 
     if (startOfWeek(bookingStart).getTime() !== weekStart.getTime()) {
@@ -267,6 +267,7 @@ function BookingsPage() {
             canEdit={can('bookings:update')}
             canDelete={can('bookings:delete')}
             onEdit={(booking) => setPanel({ type: 'edit', booking })}
+            onSaved={handleSaved}
             onDeleted={handleDeleted}
           />
         )}
