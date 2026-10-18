@@ -3,13 +3,14 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import AppHeader from '../components/AppHeader.jsx'
 import WeekCalendar from '../components/WeekCalendar.jsx'
 import BookingList from '../components/BookingList.jsx'
-import Drawer from '../components/Drawer.jsx'
 import BookingDetails from '../components/BookingDetails.jsx'
 import BookingForm from '../components/BookingForm.jsx'
 import { apiRequest } from '../api/client.js'
 import { getSession, clearSession } from '../utils/session.js'
 import { useToast } from '../hooks/useToast.js'
 import { useMediaQuery } from '../hooks/useMediaQuery.js'
+import AppLayout from '../components/AppLayout.jsx'
+import Modal from '../components/Modal.jsx'
 import {
   startOfWeek,
   addDays,
@@ -122,17 +123,11 @@ function BookingsPage() {
     refresh()
   }
 
-  function signOut() {
-    clearSession()
-    navigate('/login')
-  }
-
   const panelTitle =
     panel?.type === 'create' ? 'New booking' : panel?.type === 'edit' ? 'Edit booking' : 'Booking details'
 
   return (
-    <div className="min-h-screen bg-white">
-      <AppHeader user={user} onSignOut={signOut} />
+    <AppLayout user={user}>
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -263,7 +258,7 @@ function BookingsPage() {
         </div>
       </main>
 
-      <Drawer open={Boolean(panel)} title={panelTitle} onClose={closePanel}>
+      <Modal open={Boolean(panel)} title={panelTitle} size={panel?.type === 'details' ? 'md' : 'lg'} onClose={closePanel}>
         {panel?.type === 'details' && (
           <BookingDetails
             key={panel.id}
@@ -287,8 +282,8 @@ function BookingsPage() {
             onCancel={() => setPanel({ type: 'details', id: panel.booking._id })}
           />
         )}
-      </Drawer>
-    </div>
+      </Modal>
+ </AppLayout>
   )
 }
 
