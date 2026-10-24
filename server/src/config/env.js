@@ -7,6 +7,10 @@ const envSchema = z.object({
   CLIENT_URL: z.string().url(),
   MONGO_URI: z.string().startsWith('mongodb'),
   JWT_SECRET: z.string().min(32),
+  STRIPE_SECRET_KEY: z.string().startsWith('sk_', 'Must be a Stripe secret key (sk_...)'),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_', 'Must be a webhook signing secret (whsec_...)'),
+  STRIPE_PRICE_PRO: z.string().startsWith('price_', 'Must be a Stripe price ID (price_...)'),
+  STRIPE_PRICE_TEAM: z.string().startsWith('price_', 'Must be a Stripe price ID (price_...)'),
 })
 
 const parsed = envSchema.safeParse(process.env)
