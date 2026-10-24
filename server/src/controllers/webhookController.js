@@ -38,7 +38,7 @@ async function findTenantForSubscription(subscription) {
   return Tenant.findOne({ stripeCustomerId: subscription.customer })
 }
 
-async function syncSubscription(subscriptionId) {
+export async function syncSubscription(subscriptionId) {
   const subscription = await stripe.subscriptions.retrieve(subscriptionId)
   const tenant = await findTenantForSubscription(subscription)
 
