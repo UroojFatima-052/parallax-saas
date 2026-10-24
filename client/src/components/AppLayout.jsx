@@ -6,7 +6,7 @@ const NAV_ITEMS = [
   { label: 'Bookings', to: '/bookings' },
   { label: 'Customers' },
   { label: 'Team' },
-  { label: 'Billing' },
+  { label: 'Billing', to: '/billing' },
   { label: 'Settings' },
 ]
 
