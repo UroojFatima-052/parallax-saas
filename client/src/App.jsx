@@ -4,6 +4,7 @@ import OnboardPage from './pages/OnboardPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx'
 import BookingsPage from './pages/BookingsPage.jsx'
+import PlansPage from './pages/PlansPage.jsx'
 
 function App() {
   return (
@@ -15,6 +16,8 @@ function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/bookings" element={<BookingsPage />} />
       <Route path="/dashboard" element={<Navigate to="/bookings" replace />} />
+      <Route path="/billing/plans" element={<PlansPage />} />
+      <Route path="/billing" element={<Navigate to="/billing/plans" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
