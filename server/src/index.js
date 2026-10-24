@@ -5,9 +5,12 @@ import { connectDB } from './config/db.js'
 import authRoutes from './routes/authRoutes.js'
 import bookingRoutes from './routes/bookingRoutes.js'
 import billingRoutes from './routes/billingRoutes.js'
+import { handleStripeWebhook } from './controllers/webhookController.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 
 const app = express()
+
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook)
 
 app.use(cors({ origin: env.CLIENT_URL, exposedHeaders: ['Idempotent-Replayed'] }))
 app.use(express.json())
