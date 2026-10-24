@@ -12,7 +12,7 @@ const organisations = [
   {
     name: 'City Clinic',
     slug: 'city-clinic',
-    plan: 'pro',
+    plan: 'free',
     users: [
       { name: 'Ayesha Khan', email: 'ayesha@cityclinic.test', role: 'admin' },
       { name: 'Bilal Ahmed', email: 'bilal.ahmed@mail.test', role: 'member' },
