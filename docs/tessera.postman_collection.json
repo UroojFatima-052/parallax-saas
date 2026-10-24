@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tessera API",
-    "description": "Multi-tenant booking API for Tessera.\n\nAll errors use one shape:\n\n{ \"error\": { \"code\": \"VALIDATION_ERROR\", \"message\": \"Some fields are invalid\", \"details\": [{ \"field\": \"endTime\", \"message\": \"End time must be after start time\" }] } }\n\n`details` only appears on validation errors.\n\nRun **Login (admin)** first. It saves the token automatically. Seeded users all use the password Password123!",
+    "description": "Multi-tenant booking and billing API for Tessera.\n\nAll errors use one shape:\n\n{ \"error\": { \"code\": \"VALIDATION_ERROR\", \"message\": \"Some fields are invalid\", \"details\": [{ \"field\": \"endTime\", \"message\": \"End time must be after start time\" }] } }\n\n`details` only appears on validation errors.\n\nRun **Login (admin)** first. It saves the token automatically. Seeded users all use the password Password123!",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -12,7 +12,8 @@
     { "key": "baseUrl", "value": "http://localhost:5000" },
     { "key": "token", "value": "" },
     { "key": "bookingId", "value": "" },
-    { "key": "idempotencyKey", "value": "" }
+    { "key": "idempotencyKey", "value": "" },
+    { "key": "checkoutUrl", "value": "" }
   ],
   "item": [
     {
@@ -226,10 +227,7 @@
               { "key": "Idempotency-Key", "value": "{{$guid}}" }
             ],
             "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"confirmed\"\n}"
-            },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"confirmed\"\n}" },
             "description": "Updates any of the booking fields. Idempotency-Key is optional here. End time is checked against the existing start time when only one is changed."
           }
         },
@@ -239,6 +237,99 @@
             "method": "DELETE",
             "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
             "description": "Deletes a booking. Returns 204. Needs bookings:delete, so members get 403 FORBIDDEN."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Billing",
+      "description": "Stripe subscriptions in test mode. Run Login (admin) first. Checkout returns a Stripe URL: open it in a browser and pay with the test card 4242 4242 4242 4242, any future date, any CVC. Keep `stripe listen` running so the webhook updates the plan.",
+      "item": [
+        {
+          "name": "List plans",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/billing/plans",
+            "description": "Returns Free, Pro and Team with prices and features. Any signed-in user."
+          }
+        },
+        {
+          "name": "Get subscription",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/billing/subscription",
+            "description": "Returns the organisation's plan, status, currentPeriodEnd, cancelAtPeriodEnd and hasSubscription. Any signed-in user."
+          }
+        },
+        {
+          "name": "Start checkout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/billing/checkout",
+            "description": "Creates a Stripe Checkout session for a paid plan. Needs billing:manage. Returns 201 { url }. Open the URL to pay. Returns 409 ALREADY_SUBSCRIBED if the organisation already has a subscription.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"plan\": \"pro\"\n}" }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('checkoutUrl', pm.response.json().url);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change plan",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/billing/change-plan",
+            "description": "Switches the subscription to another paid plan with proration, which creates a 'Plan change' invoice. Returns 400 SAME_PLAN if already on it, 409 NO_SUBSCRIPTION if there is no subscription.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"plan\": \"team\"\n}" }
+          }
+        },
+        {
+          "name": "Cancel at period end",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/billing/cancel",
+            "description": "Sets the subscription to end on currentPeriodEnd. The plan stays active until then.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ]
+          }
+        },
+        {
+          "name": "Resume",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/billing/resume",
+            "description": "Undoes a pending cancellation. Returns 400 NOT_CANCELLING if the subscription isn't set to cancel.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ]
+          }
+        },
+        {
+          "name": "List invoices",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/billing/invoices",
+            "description": "Past invoices from Stripe, newest first. Amounts are in cents. Needs billing:manage, so members get 403."
           }
         }
       ]
@@ -293,6 +384,44 @@
             "method": "GET",
             "url": "{{baseUrl}}/api/nothing-here",
             "description": "Returns 404 ROUTE_NOT_FOUND."
+          }
+        },
+        {
+          "name": "Checkout for the free plan",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/billing/checkout",
+            "description": "Only paid plans can be checked out. Returns 400 VALIDATION_ERROR.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"plan\": \"free\"\n}" }
+          }
+        },
+        {
+          "name": "Invoices as a member",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/billing/invoices",
+            "description": "Run Login (member) first. Members don't have billing:manage, so this returns 403 FORBIDDEN. Run Login (admin) again afterwards."
+          }
+        },
+        {
+          "name": "Webhook with a fake signature",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/webhooks/stripe",
+            "description": "A request that wasn't signed by Stripe is rejected before anything is processed. Returns 400 INVALID_SIGNATURE.",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Stripe-Signature", "value": "t=1700000000,v1=not_a_real_signature" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_fake\",\n  \"type\": \"customer.subscription.updated\"\n}"
+            },
+            "auth": { "type": "noauth" }
           }
         }
       ]
